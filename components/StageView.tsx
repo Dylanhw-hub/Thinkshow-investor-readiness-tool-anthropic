@@ -2,7 +2,20 @@
 import React, { useState } from 'react';
 import { Stage, AppState, Action } from '../types';
 import { evaluateStage } from '../services/gemini';
-import { Loader2, AlertTriangle, CheckCircle, ArrowRight, BrainCircuit, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { 
+  Loader2, 
+  AlertTriangle, 
+  CheckCircle, 
+  ArrowRight, 
+  BrainCircuit, 
+  Info, 
+  Target, 
+  Zap, 
+  BarChart3, 
+  ArrowUpRight,
+  ShieldAlert,
+  Globe
+} from 'lucide-react';
 
 interface StageViewProps {
   stage: Stage;
@@ -22,7 +35,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
   const handleSubmit = async () => {
     const allAnswersFilled = stage.questions.every(q => (answers[q.id]?.length || 0) >= 10);
     if (!allAnswersFilled) {
-      alert("Please provide at least some basic detail for each question before submitting for evaluation.");
+      alert("Please provide more detail for each question before submitting.");
       return;
     }
 
@@ -52,6 +65,63 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     return 'bg-red-500/10 border-red-500/50 text-red-500';
   };
 
+  const cleanText = (text: string) => {
+    // Remove markdown symbols like **, ###, etc.
+    return text.replace(/\*\*|###|#/g, '').trim();
+  };
+
+  // Helper to parse the structured feedback
+  const formatStructuredFeedback = (text: string) => {
+    const lines = text.split('\n');
+    return lines.map((line, idx) => {
+      const upperLine = line.toUpperCase();
+      
+      if (upperLine.includes('OBJECTION:')) {
+        return (
+          <div key={idx} className="mt-6 p-4 bg-red-500/5 border-l-2 border-red-500 rounded-r-lg">
+            <div className="flex items-center gap-2 text-red-400 font-mono text-[10px] uppercase tracking-widest mb-1">
+              <ShieldAlert size={12} /> Objection
+            </div>
+            <p className="text-gray-200 text-base leading-relaxed">{cleanText(line.replace(/.*OBJECTION:/i, ''))}</p>
+          </div>
+        );
+      }
+      if (upperLine.includes('BENCHMARK:')) {
+        return (
+          <div key={idx} className="mt-2 p-4 bg-blue-500/5 border-l-2 border-blue-500 rounded-r-lg">
+            <div className="flex items-center gap-2 text-blue-400 font-mono text-[10px] uppercase tracking-widest mb-1">
+              <BarChart3 size={12} /> Benchmark
+            </div>
+            <p className="text-gray-300 text-sm italic leading-relaxed">{cleanText(line.replace(/.*BENCHMARK:/i, ''))}</p>
+          </div>
+        );
+      }
+      if (upperLine.includes('CONSEQUENCE:')) {
+        return (
+          <div key={idx} className="mt-2 p-4 bg-orange-500/5 border-l-2 border-orange-500 rounded-r-lg">
+            <div className="flex items-center gap-2 text-orange-400 font-mono text-[10px] uppercase tracking-widest mb-1">
+              <Zap size={12} /> Consequence
+            </div>
+            <p className="text-gray-300 text-sm leading-relaxed">{cleanText(line.replace(/.*CONSEQUENCE:/i, ''))}</p>
+          </div>
+        );
+      }
+      if (upperLine.includes('FIX:')) {
+        return (
+          <div key={idx} className="mt-2 mb-4 p-4 bg-green-500/10 border-l-2 border-green-500 rounded-r-lg shadow-lg">
+            <div className="flex items-center gap-2 text-green-400 font-mono text-[10px] uppercase tracking-widest mb-1">
+              <ArrowUpRight size={12} /> Recommended Fix
+            </div>
+            <p className="text-white font-medium leading-relaxed">{cleanText(line.replace(/.*FIX:/i, ''))}</p>
+          </div>
+        );
+      }
+      
+      const trimmedLine = cleanText(line);
+      return trimmedLine ? <p key={idx} className="text-gray-400 my-4 leading-relaxed font-medium">{trimmedLine}</p> : null;
+    });
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-8 lg:p-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-12">
@@ -61,9 +131,17 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
           </span>
           <div className="h-px flex-1 bg-gradient-to-r from-gray-800 to-transparent"></div>
         </div>
-        <h1 className="text-4xl lg:text-5xl font-bold mb-4 gold-gradient tracking-tight">
-          {stage.title}
-        </h1>
+        <div className="flex justify-between items-start gap-4">
+          <h1 className="text-4xl lg:text-5xl font-bold mb-4 gold-gradient tracking-tight">
+            {stage.title}
+          </h1>
+          {evaluation && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-gray-900 border border-gray-800 rounded-full">
+              <Globe size={10} className="text-green-500" />
+              <span className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">ZA Calibrated</span>
+            </div>
+          )}
+        </div>
         <p className="text-gray-400 text-lg leading-relaxed max-w-2xl">
           {stage.description}
         </p>
@@ -81,16 +159,15 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
                   {q.text}
                 </label>
                 <div className={`text-[10px] font-mono px-2 py-1 rounded transition-colors ${isEnough ? 'bg-green-500/10 text-green-500' : 'bg-gray-800 text-gray-500'}`}>
-                  {isEnough ? '✓ Sufficient' : '💡 Detail needed'} ({charCount} chars)
+                  {isEnough ? '✓ Sufficient' : '💡 More detail better'} ({charCount} chars)
                 </div>
               </div>
 
-              {/* Jargon Buster / Investor Context */}
               {q.jargonBuster && (
                 <div className="mb-4 p-3 bg-gray-900/50 border border-gray-800/50 rounded-lg flex gap-3 items-start group/insight hover:border-[#D4A843]/30 transition-colors">
                   <Info size={14} className="text-[#D4A843] mt-0.5 shrink-0" />
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed group-hover/insight:text-gray-300">
-                    <span className="text-[#D4A843]/70 font-bold mr-1">INVESTOR INSIGHT:</span>
+                    <span className="text-[#D4A843]/70 font-bold mr-1 uppercase">Investor Insight:</span>
                     {q.jargonBuster}
                   </p>
                 </div>
@@ -107,7 +184,6 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         })}
       </div>
 
-      {/* Evaluation Results Section */}
       {evaluation && (
         <div className="mt-16 border-t border-gray-800 pt-16 space-y-12 animate-in zoom-in-95 duration-700">
           <div className="flex flex-col md:flex-row items-center gap-8 bg-[#0F0F1A] rounded-2xl p-8 border border-gray-800 relative overflow-hidden">
@@ -131,7 +207,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-6">
               <h4 className="text-red-400 font-mono text-sm uppercase tracking-widest mb-4 flex items-center gap-2">
-                <AlertTriangle size={16} /> Red Flags
+                <AlertTriangle size={16} /> Critical Red Flags
               </h4>
               <ul className="space-y-3">
                 {evaluation.redFlags.map((flag, i) => (
@@ -145,7 +221,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
 
             <div className="bg-[#D4A843]/5 border border-[#D4A843]/20 rounded-2xl p-6">
               <h4 className="text-[#D4A843] font-mono text-sm uppercase tracking-widest mb-4 flex items-center gap-2">
-                <BrainCircuit size={16} /> Key Investor Questions
+                <BrainCircuit size={16} /> Strategy Interrogation
               </h4>
               <ul className="space-y-3">
                 {evaluation.investorQuestions.map((q, i) => (
@@ -158,8 +234,17 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
             </div>
           </div>
 
+          <div>
+            <h4 className="text-gray-200 font-mono text-sm uppercase tracking-widest mb-6 flex items-center gap-2">
+              <Target size={16} className="text-[#D4A843]" /> Evidence-Based Analysis (ZA Context)
+            </h4>
+            <div className="space-y-1">
+              {formatStructuredFeedback(evaluation.detailedFeedback)}
+            </div>
+          </div>
+
           <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-6">
-            <h4 className="text-yellow-500 font-mono text-sm uppercase tracking-widest mb-4">Required Fixes</h4>
+            <h4 className="text-yellow-500 font-mono text-sm uppercase tracking-widest mb-4">Strategic Correction Roadmap</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {evaluation.requiredFixes.map((fix, i) => (
                 <div key={i} className="flex items-start gap-3 p-3 bg-black/20 rounded-lg">
@@ -167,13 +252,6 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
                   <span className="text-gray-300 text-sm leading-snug">{fix}</span>
                 </div>
               ))}
-            </div>
-          </div>
-
-          <div className="prose prose-invert max-w-none">
-            <h4 className="text-gray-200 font-mono text-sm uppercase tracking-widest mb-4">Detailed Analysis</h4>
-            <div className="text-gray-400 text-lg leading-relaxed space-y-4">
-              {evaluation.detailedFeedback.split('\n').map((para, i) => para && <p key={i}>{para}</p>)}
             </div>
           </div>
         </div>
@@ -185,7 +263,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
           onClick={handleSkip}
           className="px-8 py-4 rounded-xl font-semibold text-gray-400 hover:text-white hover:bg-gray-900 border border-gray-800 transition-all"
         >
-          {evaluation ? 'Continue to Next Stage' : 'Skip & Continue'}
+          {evaluation ? 'Continue to Next Stage' : 'Skip Stage'}
         </button>
         <button
           onClick={handleSubmit}
@@ -195,11 +273,11 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
           {isEvaluating ? (
             <>
               <Loader2 className="animate-spin" />
-              Evaluating Plan...
+              Processing Evaluation...
             </>
           ) : (
             <>
-              {evaluation ? 'Re-Evaluate Plan' : 'Submit for Evaluation'}
+              {evaluation ? 'Re-Evaluate Logic' : 'Submit Plan'}
               <ArrowRight size={20} />
             </>
           )}
