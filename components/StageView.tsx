@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Stage, AppState, Action } from '../types';
 import { evaluateStage } from '../services/gemini';
 import { 
@@ -14,7 +14,9 @@ import {
   BarChart3, 
   ArrowUpRight,
   ShieldAlert,
-  Globe
+  Globe,
+  Mic,
+  MicOff
 } from 'lucide-react';
 
 interface StageViewProps {
@@ -27,6 +29,67 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
   const stageState = state.stages[stage.id] || { answers: {}, isSkipped: false };
   const { answers, evaluation } = stageState;
   const { isEvaluating } = state;
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Initialize Speech Recognition
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+
+      recognitionRef.current.onresult = (event: any) => {
+        if (!recordingId) return;
+        
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        if (finalTranscript) {
+          const currentText = answers[recordingId] || '';
+          const space = currentText.length > 0 && !currentText.endsWith(' ') ? ' ' : '';
+          handleAnswerChange(recordingId, currentText + space + finalTranscript);
+        }
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error', event.error);
+        setRecordingId(null);
+      };
+
+      recognitionRef.current.onend = () => {
+        setRecordingId(null);
+      };
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [recordingId, answers]);
+
+  const toggleRecording = (qId: string) => {
+    if (recordingId === qId) {
+      recognitionRef.current?.stop();
+      setRecordingId(null);
+    } else {
+      if (recordingId) {
+        recognitionRef.current?.stop();
+      }
+      setRecordingId(qId);
+      recognitionRef.current?.start();
+    }
+  };
 
   const handleAnswerChange = (qId: string, value: string) => {
     dispatch({ type: 'SET_ANSWER', stageId: stage.id, questionId: qId, value });
@@ -66,11 +129,9 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
   };
 
   const cleanText = (text: string) => {
-    // Remove markdown symbols like **, ###, etc.
     return text.replace(/\*\*|###|#/g, '').trim();
   };
 
-  // Helper to parse the structured feedback
   const formatStructuredFeedback = (text: string) => {
     const lines = text.split('\n');
     return lines.map((line, idx) => {
@@ -151,6 +212,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         {stage.questions.map((q) => {
           const charCount = (answers[q.id] || '').length;
           const isEnough = charCount >= 50;
+          const isRecording = recordingId === q.id;
 
           return (
             <div key={q.id} className="group relative">
@@ -158,8 +220,21 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
                 <label className="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors flex items-center gap-2">
                   {q.text}
                 </label>
-                <div className={`text-[10px] font-mono px-2 py-1 rounded transition-colors ${isEnough ? 'bg-green-500/10 text-green-500' : 'bg-gray-800 text-gray-500'}`}>
-                  {isEnough ? '✓ Sufficient' : '💡 More detail better'} ({charCount} chars)
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => toggleRecording(q.id)}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest transition-all ${
+                      isRecording 
+                        ? 'bg-red-500 text-white animate-pulse' 
+                        : 'bg-gray-800 text-gray-400 hover:text-[#D4A843] hover:bg-gray-700'
+                    }`}
+                  >
+                    {isRecording ? <Mic size={12} /> : <Mic size={12} />}
+                    {isRecording ? 'Listening...' : 'Voice Dictate'}
+                  </button>
+                  <div className={`text-[10px] font-mono px-2 py-1 rounded transition-colors ${isEnough ? 'bg-green-500/10 text-green-500' : 'bg-gray-800 text-gray-500'}`}>
+                    {charCount} chars
+                  </div>
                 </div>
               </div>
 
@@ -173,12 +248,21 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
                 </div>
               )}
 
-              <textarea
-                value={answers[q.id] || ''}
-                onChange={(e) => handleAnswerChange(q.id, e.target.value)}
-                placeholder={q.placeholder}
-                className="w-full h-40 bg-[#0F0F1A] border border-gray-800 rounded-xl p-6 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-[#D4A843] focus:ring-1 focus:ring-[#D4A843]/20 transition-all resize-y shadow-inner text-lg leading-relaxed"
-              />
+              <div className="relative">
+                <textarea
+                  value={answers[q.id] || ''}
+                  onChange={(e) => handleAnswerChange(q.id, e.target.value)}
+                  placeholder={isRecording ? 'Listening to your voice...' : q.placeholder}
+                  className={`w-full h-40 bg-[#0F0F1A] border rounded-xl p-6 text-gray-100 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#D4A843]/20 transition-all resize-y shadow-inner text-lg leading-relaxed ${
+                    isRecording ? 'border-[#D4A843] ring-2 ring-[#D4A843]/10' : 'border-gray-800 focus:border-[#D4A843]'
+                  }`}
+                />
+                {isRecording && (
+                  <div className="absolute top-2 right-2">
+                    <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
