@@ -16,7 +16,7 @@ import {
   ShieldAlert,
   Globe,
   Mic,
-  MicOff
+  Square
 } from 'lucide-react';
 
 interface StageViewProps {
@@ -29,70 +29,119 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
   const stageState = state.stages[stage.id] || { answers: {}, isSkipped: false };
   const { answers, evaluation } = stageState;
   const { isEvaluating } = state;
-  const [recordingId, setRecordingId] = useState<string | null>(null);
+  
+  // Voice State
+  const [isRecordingActive, setIsRecordingActive] = useState(false);
+  const [activeQId, setActiveQId] = useState<string | null>(null);
+  const [interimText, setInterimText] = useState("");
+  
   const recognitionRef = useRef<any>(null);
+  const answersRef = useRef(answers);
+  const activeQIdRef = useRef<string | null>(null);
+  const interimTextRef = useRef("");
+
+  // Sync refs with state to avoid stale closures in recognition callbacks
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   useEffect(() => {
-    // Initialize Speech Recognition
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
+    activeQIdRef.current = activeQId;
+  }, [activeQId]);
 
-      recognitionRef.current.onresult = (event: any) => {
-        if (!recordingId) return;
-        
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-
-        if (finalTranscript) {
-          const currentText = answers[recordingId] || '';
-          const space = currentText.length > 0 && !currentText.endsWith(' ') ? ' ' : '';
-          handleAnswerChange(recordingId, currentText + space + finalTranscript);
-        }
-      };
-
-      recognitionRef.current.onerror = (event: any) => {
-        console.error('Speech recognition error', event.error);
-        setRecordingId(null);
-      };
-
-      recognitionRef.current.onend = () => {
-        setRecordingId(null);
-      };
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, [recordingId, answers]);
-
-  const toggleRecording = (qId: string) => {
-    if (recordingId === qId) {
-      recognitionRef.current?.stop();
-      setRecordingId(null);
-    } else {
-      if (recordingId) {
-        recognitionRef.current?.stop();
-      }
-      setRecordingId(qId);
-      recognitionRef.current?.start();
-    }
-  };
+  useEffect(() => {
+    interimTextRef.current = interimText;
+  }, [interimText]);
 
   const handleAnswerChange = (qId: string, value: string) => {
     dispatch({ type: 'SET_ANSWER', stageId: stage.id, questionId: qId, value });
+  };
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (SpeechRecognition && !recognitionRef.current) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-ZA'; 
+
+      recognition.onresult = (event: any) => {
+        const qId = activeQIdRef.current;
+        if (!qId) return;
+
+        let finalBatch = '';
+        let interimBatch = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalBatch += event.results[i][0].transcript;
+          } else {
+            interimBatch += event.results[i][0].transcript;
+          }
+        }
+
+        setInterimText(interimBatch);
+
+        if (finalBatch) {
+          const currentText = answersRef.current[qId] || '';
+          const space = currentText.length > 0 && !currentText.endsWith(' ') ? ' ' : '';
+          handleAnswerChange(qId, currentText + space + finalBatch.trim());
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error', event.error);
+        stopRecording();
+      };
+
+      recognition.onend = () => {
+        // Final safety check: if there's leftover interim text when the mic closes, commit it.
+        const qId = activeQIdRef.current;
+        const leftover = interimTextRef.current;
+        if (qId && leftover) {
+          const currentText = answersRef.current[qId] || '';
+          const space = currentText.length > 0 && !currentText.endsWith(' ') ? ' ' : '';
+          handleAnswerChange(qId, currentText + space + leftover.trim());
+        }
+        
+        setIsRecordingActive(false);
+        setActiveQId(null);
+        setInterimText("");
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const startRecording = (qId: string) => {
+    if (recognitionRef.current) {
+      try {
+        setActiveQId(qId);
+        setIsRecordingActive(true);
+        recognitionRef.current.start();
+      } catch (e) {
+        console.error("Recognition already started", e);
+      }
+    } else {
+      alert("Speech recognition is not supported in this browser.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      // Note: onend will handle the cleanup of states
+    }
+  };
+
+  const toggleRecording = (qId: string) => {
+    if (activeQId === qId) {
+      stopRecording();
+    } else {
+      if (activeQId) stopRecording();
+      setTimeout(() => startRecording(qId), 100);
+    }
   };
 
   const handleSubmit = async () => {
@@ -212,7 +261,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         {stage.questions.map((q) => {
           const charCount = (answers[q.id] || '').length;
           const isEnough = charCount >= 50;
-          const isRecording = recordingId === q.id;
+          const isCurrentRecording = activeQId === q.id;
 
           return (
             <div key={q.id} className="group relative">
@@ -223,14 +272,14 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => toggleRecording(q.id)}
-                    className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest transition-all ${
-                      isRecording 
-                        ? 'bg-red-500 text-white animate-pulse' 
-                        : 'bg-gray-800 text-gray-400 hover:text-[#D4A843] hover:bg-gray-700'
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-mono uppercase tracking-widest transition-all shadow-lg ${
+                      isCurrentRecording 
+                        ? 'bg-red-600 text-white ring-4 ring-red-500/20' 
+                        : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
                     }`}
                   >
-                    {isRecording ? <Mic size={12} /> : <Mic size={12} />}
-                    {isRecording ? 'Listening...' : 'Voice Dictate'}
+                    {isCurrentRecording ? <Square size={12} fill="currentColor" /> : <Mic size={12} />}
+                    {isCurrentRecording ? 'Stop Recording' : 'Voice Dictate'}
                   </button>
                   <div className={`text-[10px] font-mono px-2 py-1 rounded transition-colors ${isEnough ? 'bg-green-500/10 text-green-500' : 'bg-gray-800 text-gray-500'}`}>
                     {charCount} chars
@@ -249,17 +298,25 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
               )}
 
               <div className="relative">
+                {/* Visual Interim Results Overlay */}
+                <div className="absolute top-0 left-0 w-full h-full pointer-events-none p-6 text-lg leading-relaxed z-10 overflow-hidden">
+                  <span className="text-transparent opacity-0">{(answers[q.id] || '')} </span>
+                  <span className="text-gray-500 italic">{isCurrentRecording ? interimText : ''}</span>
+                </div>
+                
                 <textarea
                   value={answers[q.id] || ''}
                   onChange={(e) => handleAnswerChange(q.id, e.target.value)}
-                  placeholder={isRecording ? 'Listening to your voice...' : q.placeholder}
+                  placeholder={isCurrentRecording ? 'Speak now... I am listening' : q.placeholder}
                   className={`w-full h-40 bg-[#0F0F1A] border rounded-xl p-6 text-gray-100 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#D4A843]/20 transition-all resize-y shadow-inner text-lg leading-relaxed ${
-                    isRecording ? 'border-[#D4A843] ring-2 ring-[#D4A843]/10' : 'border-gray-800 focus:border-[#D4A843]'
+                    isCurrentRecording ? 'border-red-500 ring-4 ring-red-500/5 shadow-[0_0_30px_rgba(239,68,68,0.1)]' : 'border-gray-800 focus:border-[#D4A843]'
                   }`}
                 />
-                {isRecording && (
-                  <div className="absolute top-2 right-2">
-                    <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                
+                {isCurrentRecording && (
+                  <div className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-1 bg-red-500/20 border border-red-500/50 rounded-full">
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+                    <span className="text-[10px] font-mono text-red-500 uppercase tracking-widest font-bold">Live Audio</span>
                   </div>
                 )}
               </div>
