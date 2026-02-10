@@ -12,6 +12,7 @@ export interface Question {
   id: string;
   text: string;
   placeholder: string;
+  jargonBuster?: string; // Plain English explanation for newcomers
 }
 
 export interface Stage {

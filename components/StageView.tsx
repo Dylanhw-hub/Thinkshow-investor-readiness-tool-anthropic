@@ -1,8 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Stage, AppState, Action } from '../types';
 import { evaluateStage } from '../services/gemini';
-import { Loader2, AlertTriangle, CheckCircle, ArrowRight, BrainCircuit } from 'lucide-react';
+import { Loader2, AlertTriangle, CheckCircle, ArrowRight, BrainCircuit, Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface StageViewProps {
   stage: Stage;
@@ -20,7 +20,6 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
   };
 
   const handleSubmit = async () => {
-    // Check if enough detail is provided
     const allAnswersFilled = stage.questions.every(q => (answers[q.id]?.length || 0) >= 10);
     if (!allAnswersFilled) {
       alert("Please provide at least some basic detail for each question before submitting for evaluation.");
@@ -30,7 +29,6 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     dispatch({ type: 'SET_EVALUATING', status: true });
     try {
       const result = await evaluateStage(stage.title, state.investorMode, answers);
-      // Fix typo: SET_EVALUATIONS -> SET_EVALUATION
       dispatch({ type: 'SET_EVALUATION', stageId: stage.id, result });
       dispatch({ type: 'SET_EVALUATING', status: false });
     } catch (error) {
@@ -71,26 +69,38 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         </p>
       </div>
 
-      <div className="space-y-12">
+      <div className="space-y-16">
         {stage.questions.map((q) => {
           const charCount = (answers[q.id] || '').length;
           const isEnough = charCount >= 50;
 
           return (
-            <div key={q.id} className="group">
+            <div key={q.id} className="group relative">
               <div className="flex justify-between items-baseline mb-3">
-                <label className="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">
+                <label className="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors flex items-center gap-2">
                   {q.text}
                 </label>
                 <div className={`text-[10px] font-mono px-2 py-1 rounded transition-colors ${isEnough ? 'bg-green-500/10 text-green-500' : 'bg-gray-800 text-gray-500'}`}>
-                  {isEnough ? '✓ Good amount of detail!' : '💡 More detail helps'} ({charCount} chars)
+                  {isEnough ? '✓ Sufficient' : '💡 Detail needed'} ({charCount} chars)
                 </div>
               </div>
+
+              {/* Jargon Buster / Investor Context */}
+              {q.jargonBuster && (
+                <div className="mb-4 p-3 bg-gray-900/50 border border-gray-800/50 rounded-lg flex gap-3 items-start group/insight hover:border-[#D4A843]/30 transition-colors">
+                  <Info size={14} className="text-[#D4A843] mt-0.5 shrink-0" />
+                  <p className="text-[11px] font-mono text-gray-500 leading-relaxed group-hover/insight:text-gray-300">
+                    <span className="text-[#D4A843]/70 font-bold mr-1">INVESTOR INSIGHT:</span>
+                    {q.jargonBuster}
+                  </p>
+                </div>
+              )}
+
               <textarea
                 value={answers[q.id] || ''}
                 onChange={(e) => handleAnswerChange(q.id, e.target.value)}
                 placeholder={q.placeholder}
-                className="w-full h-48 bg-[#0F0F1A] border border-gray-800 rounded-xl p-6 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-[#D4A843] focus:ring-1 focus:ring-[#D4A843]/20 transition-all resize-y shadow-inner text-lg leading-relaxed"
+                className="w-full h-40 bg-[#0F0F1A] border border-gray-800 rounded-xl p-6 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-[#D4A843] focus:ring-1 focus:ring-[#D4A843]/20 transition-all resize-y shadow-inner text-lg leading-relaxed"
               />
             </div>
           );
