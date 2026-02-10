@@ -84,7 +84,13 @@ TONE RULES:
 - Assume the founder is smart but overconfident
 - Be direct. Be blunt. Be fair but tough.
 - You are the person they should fear meeting — but whose advice they actually follow.`;
-
+const userPrompt = `Evaluation Stage: ${stageTitle}
+  Current Investor Lens: ${investorMode}
+  
+  Founder's Provided Answers:
+  ${Object.entries(answers).map(([key, val]) => `[${key}]: ${val}`).join('\n')}
+  
+  Evaluate this stage for ThinkShow. Be blunt. Score strictly.`;
   const response = await ai.models.generateContent({
     model: modelName,
     contents: userPrompt,
