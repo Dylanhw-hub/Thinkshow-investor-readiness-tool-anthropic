@@ -3,26 +3,29 @@ import React from 'react';
 import { AppState, Action, InvestorMode, StageState } from '../types';
 import { STAGES } from '../constants';
 import { 
-  LayoutDashboard, 
   ChevronLeft, 
   ChevronRight, 
   CheckCircle2, 
   Circle,
   TrendingUp,
-  Target
+  Target,
+  FileText,
+  Trash2
 } from 'lucide-react';
 
 interface SidebarProps {
   state: AppState;
   dispatch: React.Dispatch<Action>;
+  onViewReport: () => void;
+  isReportView: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
+const Sidebar: React.FC<SidebarProps> = ({ state, dispatch, onViewReport, isReportView }) => {
   const { currentStageId, sidebarCollapsed, stages, investorMode } = state;
 
   const calculateOverallScore = () => {
-    // Fix: Explicitly cast to StageState[] to avoid "unknown" type errors in filter/map
-    const scores = (Object.values(stages) as StageState[])
+    const stageArray = Object.values(stages) as StageState[];
+    const scores = stageArray
       .filter(s => s.evaluation !== undefined)
       .map(s => s.evaluation!.score);
     
@@ -40,9 +43,16 @@ const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
     return 'text-red-500';
   };
 
+  const handleClearProgress = () => {
+    if (confirm("Are you sure you want to delete all your answers and evaluations? This cannot be undone.")) {
+      localStorage.removeItem('thinkshow_investor_readiness_v1');
+      window.location.reload();
+    }
+  };
+
   return (
     <div 
-      className={`h-screen transition-all duration-300 flex flex-col border-r border-gray-800 bg-[#0F0F1A] ${
+      className={`h-screen transition-all duration-300 flex flex-col border-r border-gray-800 bg-[#0F0F1A] z-50 ${
         sidebarCollapsed ? 'w-16' : 'w-56 lg:w-64'
       }`}
     >
@@ -56,15 +66,15 @@ const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
         )}
         <button 
           onClick={() => dispatch({ type: 'TOGGLE_SIDEBAR' })}
-          className="p-1.5 hover:bg-gray-800 rounded-md transition-colors ml-auto"
+          className="p-1.5 hover:bg-gray-800 rounded-md transition-colors ml-auto text-gray-400"
         >
           {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </button>
       </div>
 
       {/* Investor Mode Selector */}
-      {!sidebarCollapsed && (
-        <div className="p-4">
+      {!sidebarCollapsed && !isReportView && (
+        <div className="p-4 animate-in fade-in duration-500">
           <label className="text-[10px] uppercase tracking-widest text-gray-500 font-mono mb-2 block">
             Investor Lens
           </label>
@@ -80,17 +90,34 @@ const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
         </div>
       )}
 
-      {/* Stages List */}
+      {/* Navigation Options */}
       <div className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
+        <div className="mb-2">
+          <button
+            onClick={() => {
+              if (isReportView) onViewReport();
+            }}
+            className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all ${
+              !isReportView ? 'bg-gray-800/50 text-[#D4A843]' : 'text-gray-400 hover:bg-gray-900'
+            }`}
+          >
+            <CheckCircle2 size={18} />
+            {!sidebarCollapsed && <span className="text-xs font-mono uppercase tracking-widest">Assessment</span>}
+          </button>
+        </div>
+
         {STAGES.map((stage) => {
           const stageState = stages[stage.id];
           const hasEvaluation = !!stageState?.evaluation;
-          const isCurrent = currentStageId === stage.id;
+          const isCurrent = currentStageId === stage.id && !isReportView;
           
           return (
             <button
               key={stage.id}
-              onClick={() => dispatch({ type: 'SET_CURRENT_STAGE', id: stage.id })}
+              onClick={() => {
+                if (isReportView) onViewReport();
+                dispatch({ type: 'SET_CURRENT_STAGE', id: stage.id });
+              }}
               className={`w-full group flex items-center gap-3 p-2 rounded-lg transition-all ${
                 isCurrent 
                   ? 'bg-gradient-to-r from-gray-800 to-transparent border-l-2 border-[#D4A843]' 
@@ -119,6 +146,18 @@ const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
             </button>
           );
         })}
+
+        <div className="mt-6 pt-4 border-t border-gray-800/50">
+          <button
+            onClick={onViewReport}
+            className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all ${
+              isReportView ? 'bg-[#D4A843]/10 text-[#D4A843]' : 'text-gray-400 hover:bg-gray-900'
+            }`}
+          >
+            <FileText size={18} />
+            {!sidebarCollapsed && <span className="text-xs font-mono uppercase tracking-widest">Master Report</span>}
+          </button>
+        </div>
       </div>
 
       {/* Footer Overall Score */}
@@ -136,12 +175,20 @@ const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
           {!sidebarCollapsed && <span className="text-xs text-gray-500">/ 10</span>}
         </div>
         {!sidebarCollapsed && (
-          <div className="mt-2 w-full bg-gray-800 h-1 rounded-full overflow-hidden">
+          <div className="mt-2 w-full bg-gray-800 h-1 rounded-full overflow-hidden mb-4">
             <div 
               className="h-full gold-bg-gradient transition-all duration-1000"
               style={{ width: `${Number(overallScore) * 10}%` }}
             />
           </div>
+        )}
+        {!sidebarCollapsed && (
+          <button 
+            onClick={handleClearProgress}
+            className="flex items-center gap-2 text-[10px] font-mono text-red-500/50 hover:text-red-500 transition-colors uppercase tracking-widest"
+          >
+            <Trash2 size={12} /> Clear All Data
+          </button>
         )}
       </div>
     </div>
