@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Stage, AppState, Action } from '../types';
-import { evaluateStage } from '../services/gemini';
+import { evaluateStage, refineDraft, consultOnPoint } from '../services/gemini';
 import { 
   Loader2, 
   AlertTriangle, 
@@ -34,7 +34,16 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [activeQId, setActiveQId] = useState<string | null>(null);
   const [interimText, setInterimText] = useState("");
-  
+
+  // Feedback Enhancement State
+  const [expandedFeedback, setExpandedFeedback] = useState<{
+    type: 'fix' | 'flag' | 'question';
+    index: number;
+    content: string;
+    isLoading: boolean;
+  } | null>(null);
+  const [feedbackCache, setFeedbackCache] = useState<Record<string, string>>({});
+
   const recognitionRef = useRef<any>(null);
   const answersRef = useRef(answers);
   const activeQIdRef = useRef<string | null>(null);
@@ -144,6 +153,48 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     }
   };
 
+  const handleShowMe = async (
+    type: 'fix' | 'flag' | 'question',
+    index: number,
+    itemText: string
+  ) => {
+    const cacheKey = `${type}-${index}`;
+
+    // If already cached, just show it
+    if (feedbackCache[cacheKey]) {
+      setExpandedFeedback({ type, index, content: feedbackCache[cacheKey], isLoading: false });
+      return;
+    }
+
+    // Show loading state
+    setExpandedFeedback({ type, index, content: '', isLoading: true });
+
+    try {
+      let result: string;
+
+      if (type === 'question') {
+        // For investor questions, use refineDraft to draft an answer
+        const bestAnswer = Object.values(answers).sort((a, b) => b.length - a.length)[0] || '';
+        result = await refineDraft(itemText, bestAnswer, state.investorMode);
+      } else {
+        // For fixes and flags, use consultOnPoint for deeper explanation
+        const context = Object.entries(answers)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('\n');
+        result = await consultOnPoint(
+          type === 'fix' ? 'Required Fix' : 'Red Flag',
+          itemText,
+          context
+        );
+      }
+
+      setFeedbackCache(prev => ({ ...prev, [cacheKey]: result }));
+      setExpandedFeedback({ type, index, content: result, isLoading: false });
+    } catch (e) {
+      setExpandedFeedback({ type, index, content: 'Failed to generate. Try again.', isLoading: false });
+    }
+  };
+
   const handleSubmit = async () => {
     const allAnswersFilled = stage.questions.every(q => (answers[q.id]?.length || 0) >= 10);
     if (!allAnswersFilled) {
@@ -179,6 +230,45 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
 
   const cleanText = (text: string) => {
     return text.replace(/\*\*|###|#/g, '').trim();
+  };
+
+  const FeedbackExpander = ({ content, isLoading, onClose }: { content: string; isLoading: boolean; onClose: () => void }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+      navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    };
+
+    return (
+      <div className="mt-3 bg-[#0F0F1A] border-l-2 border-[#D4A843]/30 rounded-r-lg p-4 animate-in slide-in-from-top-2 duration-300">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Loader2 size={14} className="animate-spin" />
+            <span className="font-mono text-[10px] uppercase tracking-widest">Generating suggestion...</span>
+          </div>
+        ) : (
+          <>
+            <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
+            <div className="flex items-center gap-3 mt-3 pt-2 border-t border-gray-800/50">
+              <button
+                onClick={handleCopy}
+                className="text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-[#D4A843] transition-colors"
+              >
+                {copied ? '✓ Copied' : 'Copy text'}
+              </button>
+              <button
+                onClick={onClose}
+                className="text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-white transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   const formatStructuredFeedback = (text: string) => {
@@ -217,12 +307,34 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         );
       }
       if (upperLine.includes('FIX:')) {
+        const fixText = cleanText(line.replace(/.*FIX:/i, ''));
         return (
-          <div key={idx} className="mt-2 mb-4 p-4 bg-green-500/10 border-l-2 border-green-500 rounded-r-lg shadow-lg">
-            <div className="flex items-center gap-2 text-green-400 font-mono text-[10px] uppercase tracking-widest mb-1">
-              <ArrowUpRight size={12} /> Recommended Fix
+          <div key={idx}>
+            <div className="mt-2 mb-4 p-4 bg-green-500/10 border-l-2 border-green-500 rounded-r-lg shadow-lg">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 text-green-400 font-mono text-[10px] uppercase tracking-widest mb-1">
+                    <ArrowUpRight size={12} /> Recommended Fix
+                  </div>
+                  <p className="text-white font-medium leading-relaxed">{fixText}</p>
+                </div>
+                <button
+                  onClick={() => handleShowMe('fix', 100 + idx, fixText)}
+                  className="shrink-0 mt-1 text-[10px] font-mono uppercase tracking-widest text-green-500/50 hover:text-green-400 transition-colors px-2 py-1 border border-transparent hover:border-green-500/30 rounded"
+                >
+                  {expandedFeedback?.type === 'fix' && expandedFeedback?.index === (100 + idx) && expandedFeedback?.isLoading
+                    ? '...'
+                    : 'Show Me'}
+                </button>
+              </div>
             </div>
-            <p className="text-white font-medium leading-relaxed">{cleanText(line.replace(/.*FIX:/i, ''))}</p>
+            {expandedFeedback?.type === 'fix' && expandedFeedback?.index === (100 + idx) && (
+              <FeedbackExpander
+                content={expandedFeedback.content}
+                isLoading={expandedFeedback.isLoading}
+                onClose={() => setExpandedFeedback(null)}
+              />
+            )}
           </div>
         );
       }
@@ -352,9 +464,26 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
               </h4>
               <ul className="space-y-3">
                 {evaluation.redFlags.map((flag, i) => (
-                  <li key={i} className="text-gray-400 text-sm flex gap-3">
-                    <span className="text-red-500/50">•</span>
-                    {flag}
+                  <li key={i}>
+                    <div className="text-gray-400 text-sm flex gap-3 items-start">
+                      <span className="text-red-500/50 mt-0.5">•</span>
+                      <span className="flex-1">{flag}</span>
+                      <button
+                        onClick={() => handleShowMe('flag', i, flag)}
+                        className="shrink-0 text-[10px] font-mono uppercase tracking-widest text-gray-600 hover:text-red-400 transition-colors px-2 py-1 border border-transparent hover:border-gray-700 rounded"
+                      >
+                        {expandedFeedback?.type === 'flag' && expandedFeedback?.index === i && expandedFeedback?.isLoading
+                          ? '...'
+                          : 'Tell Me More'}
+                      </button>
+                    </div>
+                    {expandedFeedback?.type === 'flag' && expandedFeedback?.index === i && (
+                      <FeedbackExpander
+                        content={expandedFeedback.content}
+                        isLoading={expandedFeedback.isLoading}
+                        onClose={() => setExpandedFeedback(null)}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -366,9 +495,26 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
               </h4>
               <ul className="space-y-3">
                 {evaluation.investorQuestions.map((q, i) => (
-                  <li key={i} className="text-gray-400 text-sm flex gap-3">
-                    <span className="text-[#D4A843]/50">?</span>
-                    {q}
+                  <li key={i}>
+                    <div className="text-gray-400 text-sm flex gap-3 items-start">
+                      <span className="text-[#D4A843]/50 mt-0.5">?</span>
+                      <span className="flex-1">{q}</span>
+                      <button
+                        onClick={() => handleShowMe('question', i, q)}
+                        className="shrink-0 text-[10px] font-mono uppercase tracking-widest text-gray-600 hover:text-[#D4A843] transition-colors px-2 py-1 border border-transparent hover:border-gray-700 rounded"
+                      >
+                        {expandedFeedback?.type === 'question' && expandedFeedback?.index === i && expandedFeedback?.isLoading
+                          ? '...'
+                          : 'Draft Answer'}
+                      </button>
+                    </div>
+                    {expandedFeedback?.type === 'question' && expandedFeedback?.index === i && (
+                      <FeedbackExpander
+                        content={expandedFeedback.content}
+                        isLoading={expandedFeedback.isLoading}
+                        onClose={() => setExpandedFeedback(null)}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -388,9 +534,28 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
             <h4 className="text-yellow-500 font-mono text-sm uppercase tracking-widest mb-4">Strategic Correction Roadmap</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {evaluation.requiredFixes.map((fix, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 bg-black/20 rounded-lg">
-                  <CheckCircle size={16} className="text-yellow-500/50 mt-1 shrink-0" />
-                  <span className="text-gray-300 text-sm leading-snug">{fix}</span>
+                <div key={i}>
+                  <div className="flex items-start gap-3 p-3 bg-black/20 rounded-lg">
+                    <CheckCircle size={16} className="text-yellow-500/50 mt-1 shrink-0" />
+                    <div className="flex-1">
+                      <span className="text-gray-300 text-sm leading-snug">{fix}</span>
+                    </div>
+                    <button
+                      onClick={() => handleShowMe('fix', i, fix)}
+                      className="shrink-0 text-[10px] font-mono uppercase tracking-widest text-gray-600 hover:text-[#D4A843] transition-colors px-2 py-1 border border-transparent hover:border-gray-700 rounded"
+                    >
+                      {expandedFeedback?.type === 'fix' && expandedFeedback?.index === i && expandedFeedback?.isLoading
+                        ? '...'
+                        : 'Show Me'}
+                    </button>
+                  </div>
+                  {expandedFeedback?.type === 'fix' && expandedFeedback?.index === i && (
+                    <FeedbackExpander
+                      content={expandedFeedback.content}
+                      isLoading={expandedFeedback.isLoading}
+                      onClose={() => setExpandedFeedback(null)}
+                    />
+                  )}
                 </div>
               ))}
             </div>
