@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Stage, AppState, Action, AIMode } from '../types';
-import { evaluateStage, refineDraft, consultOnPoint, coachMe, coachDraftAnswer } from '../services/gemini';
+import { evaluateStage, refineDraft, consultOnPoint, coachMe, coachDraftAnswer, buildDocumentContext } from '../services/gemini';
 import {
   Loader2,
   AlertTriangle,
@@ -20,7 +20,8 @@ import {
   Sparkles,
   Shield,
   MessageCircle,
-  PenTool
+  PenTool,
+  FileText
 } from 'lucide-react';
 
 interface StageViewProps {
@@ -191,7 +192,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
       if (type === 'question') {
         // For investor questions, use refineDraft to draft an answer
         const bestAnswer = Object.values(answers).sort((a, b) => b.length - a.length)[0] || '';
-        result = await refineDraft(itemText, bestAnswer, state.investorMode);
+        result = await refineDraft(itemText, bestAnswer, state.investorMode, getDocContext());
       } else {
         // For fixes and flags, use consultOnPoint for deeper explanation
         const context = Object.entries(answers)
@@ -200,7 +201,8 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         result = await consultOnPoint(
           type === 'fix' ? 'Required Fix' : 'Red Flag',
           itemText,
-          context
+          context,
+          getDocContext()
         );
       }
 
@@ -222,7 +224,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     setCoachPanel({ questionId, content: '', isLoading: true, type: 'help' });
 
     try {
-      const result = await coachMe(questionText, answers[questionId] || '', stage.title);
+      const result = await coachMe(questionText, answers[questionId] || '', stage.title, getDocContext());
       setCoachCache(prev => ({ ...prev, [cacheKey]: result }));
       setCoachPanel({ questionId, content: result, isLoading: false, type: 'help' });
     } catch (e) {
@@ -241,7 +243,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     setCoachPanel({ questionId, content: '', isLoading: true, type: 'draft' });
 
     try {
-      const result = await coachDraftAnswer(questionText, answers[questionId] || '', stage.title);
+      const result = await coachDraftAnswer(questionText, answers[questionId] || '', stage.title, getDocContext());
       setCoachCache(prev => ({ ...prev, [cacheKey]: result }));
       setCoachPanel({ questionId, content: result, isLoading: false, type: 'draft' });
     } catch (e) {
@@ -254,6 +256,10 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     setCoachPanel(null);
   };
 
+  const getDocContext = () => buildDocumentContext(
+    state.uploadedDocuments.map(d => ({ name: d.name, content: d.content }))
+  );
+
   const handleSubmit = async () => {
     const allAnswersFilled = stage.questions.every(q => (answers[q.id]?.length || 0) >= 10);
     if (!allAnswersFilled) {
@@ -263,7 +269,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
 
     dispatch({ type: 'SET_EVALUATING', status: true });
     try {
-      const result = await evaluateStage(stage.title, state.investorMode, answers);
+      const result = await evaluateStage(stage.title, state.investorMode, answers, getDocContext());
       dispatch({ type: 'SET_EVALUATION', stageId: stage.id, result });
       dispatch({ type: 'SET_EVALUATING', status: false });
     } catch (error) {
@@ -513,6 +519,111 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         >
           <Shield size={14} /> Investor Mode
         </button>
+      </div>
+
+      {/* Document Context Library */}
+      <div className="mt-4 mb-8">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-gray-500 flex items-center gap-2">
+            <FileText size={12} /> Context Library
+            {state.uploadedDocuments.length > 0 && (
+              <span className="text-[#D4A843]">({state.uploadedDocuments.length} doc{state.uploadedDocuments.length !== 1 ? 's' : ''})</span>
+            )}
+          </span>
+          <label className="cursor-pointer text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-[#D4A843] transition-colors border border-gray-800 hover:border-[#D4A843]/30 px-3 py-1 rounded-lg flex items-center gap-2">
+            <ArrowUpRight size={10} /> Upload Document
+            <input
+              type="file"
+              accept=".txt,.md,.pdf,.doc,.docx"
+              multiple
+              className="hidden"
+              onChange={async (e) => {
+                const files = e.target.files;
+                if (!files) return;
+
+                for (const file of Array.from(files)) {
+                  try {
+                    let content = '';
+
+                    if (file.type === 'application/pdf') {
+                      // Basic PDF handling — read as text
+                      const arrayBuffer = await file.arrayBuffer();
+                      const bytes = new Uint8Array(arrayBuffer);
+                      let text = '';
+                      for (let i = 0; i < bytes.length; i++) {
+                        const char = bytes[i];
+                        if (char >= 32 && char <= 126) {
+                          text += String.fromCharCode(char);
+                        } else if (char === 10 || char === 13) {
+                          text += '\n';
+                        }
+                      }
+                      // Extract readable strings
+                      content = text
+                        .split('\n')
+                        .filter(line => line.trim().length > 10)
+                        .filter(line => !/^[%\/\\<>{}()\[\]]+$/.test(line.trim()))
+                        .join('\n')
+                        .substring(0, 5000);
+
+                      if (content.trim().length < 50) {
+                        content = `[PDF uploaded: ${file.name} — content could not be fully extracted. The document is available for reference.]`;
+                      }
+                    } else {
+                      // Text-based files
+                      content = await file.text();
+                    }
+
+                    const doc = {
+                      id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                      name: file.name,
+                      content: content.substring(0, 5000),
+                      uploadedAt: Date.now(),
+                      sizeBytes: file.size
+                    };
+
+                    dispatch({ type: 'ADD_DOCUMENT', document: doc });
+                  } catch (err) {
+                    console.error('Failed to process file:', file.name, err);
+                  }
+                }
+
+                // Reset input
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </div>
+
+        {/* Document list */}
+        {state.uploadedDocuments.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {state.uploadedDocuments.map(doc => (
+              <div
+                key={doc.id}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#0F0F1A] border border-gray-800 rounded-lg group hover:border-gray-700 transition-colors"
+              >
+                <FileText size={12} className="text-[#D4A843]/50" />
+                <span className="text-[10px] font-mono text-gray-400 max-w-[150px] truncate">{doc.name}</span>
+                <span className="text-[9px] font-mono text-gray-600">
+                  {(doc.sizeBytes / 1024).toFixed(0)}KB
+                </span>
+                <button
+                  onClick={() => dispatch({ type: 'REMOVE_DOCUMENT', documentId: doc.id })}
+                  className="text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {state.uploadedDocuments.length === 0 && (
+          <p className="text-[10px] text-gray-600 font-mono">
+            Upload pitch decks, business plans, brochures, or proposals. The AI will use these as context.
+          </p>
+        )}
       </div>
 
       <div className="space-y-16">

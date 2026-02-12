@@ -14,7 +14,8 @@ const initialState: AppState = {
   investorMode: InvestorMode.STANDARD,
   sidebarCollapsed: false,
   stages: {},
-  isEvaluating: false
+  isEvaluating: false,
+  uploadedDocuments: []
 };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -72,6 +73,18 @@ function reducer(state: AppState, action: Action): AppState {
       break;
     case 'SET_EVALUATING':
       newState = { ...state, isEvaluating: action.status };
+      break;
+    case 'ADD_DOCUMENT':
+      newState = {
+        ...state,
+        uploadedDocuments: [...state.uploadedDocuments, action.document]
+      };
+      break;
+    case 'REMOVE_DOCUMENT':
+      newState = {
+        ...state,
+        uploadedDocuments: state.uploadedDocuments.filter(d => d.id !== action.documentId)
+      };
       break;
     default:
       return state;

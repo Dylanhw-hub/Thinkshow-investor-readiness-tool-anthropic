@@ -37,12 +37,21 @@ export interface StageState {
   isSkipped: boolean;
 }
 
+export interface UploadedDocument {
+  id: string;
+  name: string;
+  content: string;
+  uploadedAt: number;
+  sizeBytes: number;
+}
+
 export interface AppState {
   currentStageId: number;
   investorMode: InvestorMode;
   sidebarCollapsed: boolean;
   stages: Record<number, StageState>;
   isEvaluating: boolean;
+  uploadedDocuments: UploadedDocument[];
 }
 
 export type Action =
@@ -52,7 +61,9 @@ export type Action =
   | { type: 'SET_EVALUATION'; stageId: number; result: EvaluationResult }
   | { type: 'SKIP_STAGE'; stageId: number }
   | { type: 'TOGGLE_SIDEBAR' }
-  | { type: 'SET_EVALUATING'; status: boolean };
+  | { type: 'SET_EVALUATING'; status: boolean }
+  | { type: 'ADD_DOCUMENT'; document: UploadedDocument }
+  | { type: 'REMOVE_DOCUMENT'; documentId: string };
 
 export type AIMode = 'coach' | 'investor';
 

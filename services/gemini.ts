@@ -9,14 +9,29 @@ Your job is to help Dylan articulate what ThinkShow does in the strongest, most 
 
 THINKSHOW CONTEXT (use this to help Dylan, not to challenge him):
 - Company: ThinkShow, founded by Dylan, based in South Africa
-- Sector: AI Education / EdTech targeting schools and educators
-- AI Navigator Schools programme: Currently working with 7 schools to train school-based AI teams
-- "Leading with AI Fluency" programme: Workshop-based training for school leaders. Successfully delivered to 36 leaders from 17 schools at Deloitte Greenhouse, Cape Town
-- Partnership: Deloitte hosted workshops (nature of ongoing partnership is evolving)
+- Sector: AI Education / EdTech — building an online learning campus
+
+WHAT THINKSHOW IS BUILDING (this is the primary focus):
+- An online learning campus that uses AI to make the LEARNER EXPERIENCE more interactive, sticky, and effective
+- Key differentiator: Most AI-in-education tools use AI to help course DESIGNERS build content faster. ThinkShow uses AI to improve the LEARNER'S experience — making online learning genuinely engaging, not just efficient to produce.
+- The platform creates interactive, AI-enhanced online courses where learners engage with AI as part of the learning process itself
+- Starting with AI fluency courses for educators, but the interactive learning model is designed to expand to other sectors (including corporate training)
+- This is the scalable product. This is what investors should evaluate.
+
+WHAT THINKSHOW HAS DONE (proof points and traction, not the product direction):
+- AI Navigator Schools programme: Working with 7 schools to train school-based AI teams
+- "Leading with AI Fluency" programme: Delivered training to 36 leaders from 17 schools at Deloitte Greenhouse, Cape Town
+- Deloitte partnership: Hosted workshops, nature of ongoing relationship is evolving
+- Built working prototypes: Teacher training simulators, AI practice labs, interactive learning experiences
 - Frameworks: I-Model (Intentionality, Integrity, Inquiry, Intuition) for ethical AI engagement
-- Tools built: Teacher training simulators, AI practice labs, prompt engineering training tools
-- Online courses: In development / early stage
-- Target market: Educators across Africa, starting with South Africa
+
+STRATEGIC DIRECTION:
+- Workshops and in-person training are proof-of-concept and customer acquisition channels — not the core product
+- The online campus is the product. The workshops demonstrate the methodology that the platform delivers at scale.
+- Phase 1: AI fluency courses for education sector
+- Phase 2: Expand the interactive learning model to corporate/enterprise
+- The thesis is that AI makes online learning dramatically more interactive than traditional LMS platforms, and ThinkShow is building for that future
+- Target market: Educators across Africa initially, with expansion to corporate
 - Current stage: Pre-revenue to very early revenue
 - Buyer language: School leaders, PD budgets, SGB approval, curriculum integration, WCED alignment
 
@@ -58,14 +73,17 @@ You are tough but fair. Your job is to evaluate whether this founder's answers w
 
 THINKSHOW BACKGROUND CONTEXT:
 You know the following about this company. Use this ONLY to fact-check specific claims (e.g. if the founder says "50 schools" but reality is 7, flag it). Do NOT use this context to generate contradictions or argue against the founder's strategic direction.
-- Company: ThinkShow, founded by Dylan, based in South Africa
+
+Company direction: ThinkShow is building an online learning campus that uses AI to improve the learner experience (not just the course design process). Starting with AI fluency courses for educators, designed to expand to corporate. Workshops and in-person training are customer acquisition and proof-of-concept, not the core product.
+
+Traction to date:
 - AI Navigator Schools programme: Currently working with 7 schools
 - Delivered training to 36 leaders from 17 schools at Deloitte Greenhouse, Cape Town
 - Deloitte hosted workshops (partnership details are the founder's to define)
+- Built working prototypes: training simulators, AI practice labs, interactive learning tools
 - Frameworks: I-Model for ethical AI engagement
-- Tools built: Teacher training simulators, AI practice labs, prompt engineering tools
-- Online courses: In development
-- Target market: Educators across Africa, starting with South Africa
+- Online campus: In active development
+- Target market: Educators across Africa initially, corporate expansion planned
 - Current stage: Pre-revenue to very early revenue
 
 EVALUATION RULES — EVALUATE THE ANSWER, NOT YOUR ASSUMPTIONS:
@@ -127,9 +145,15 @@ TONE:
 // ============================================================
 // API CALL FUNCTION
 // ============================================================
-async function callAnthropic(userMessage: string, systemPrompt: string): Promise<string> {
+async function callAnthropic(userMessage: string, systemPrompt: string, documentContext?: string): Promise<string> {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key missing. Set ANTHROPIC_API_KEY in .env.local");
+
+  // Append document context to system prompt if provided
+  let fullSystemPrompt = systemPrompt;
+  if (documentContext && documentContext.trim().length > 0) {
+    fullSystemPrompt += `\n\nFOUNDER'S UPLOADED DOCUMENTS (reference these for additional context about the business — treat as supplementary evidence, not as the founder's pitch answers):\n${documentContext}`;
+  }
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -142,7 +166,7 @@ async function callAnthropic(userMessage: string, systemPrompt: string): Promise
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 2000,
-      system: systemPrompt,
+      system: fullSystemPrompt,
       messages: [{ role: "user", content: userMessage }]
     })
   });
@@ -163,7 +187,8 @@ async function callAnthropic(userMessage: string, systemPrompt: string): Promise
 export async function evaluateStage(
   stageTitle: string,
   investorMode: InvestorMode,
-  answers: Record<string, string>
+  answers: Record<string, string>,
+  documentContext?: string
 ): Promise<EvaluationResult> {
 
   const userMessage = `EVALUATION STAGE: ${stageTitle}
@@ -184,7 +209,7 @@ You MUST respond in valid JSON only. No markdown, no backticks, no text outside 
   "detailedFeedback": "<structured critique using OBJECTION/BENCHMARK/CONSEQUENCE/FIX labels, and PASS/PREP labels for strong answers>"
 }`;
 
-  const resultStr = await callAnthropic(userMessage, INVESTOR_PROMPT);
+  const resultStr = await callAnthropic(userMessage, INVESTOR_PROMPT, documentContext);
   const clean = resultStr.replace(/```json\n?|```\n?/g, '').trim();
 
   try {
@@ -198,7 +223,8 @@ You MUST respond in valid JSON only. No markdown, no backticks, no text outside 
 export async function refineDraft(
   question: string,
   userAnswer: string,
-  investorLens: string
+  investorLens: string,
+  documentContext?: string
 ): Promise<string> {
 
   const userMessage = `QUESTION: ${question}
@@ -210,13 +236,14 @@ Investor Lens: ${investorLens}
 
 Return ONLY the improved text, nothing else.`;
 
-  return await callAnthropic(userMessage, INVESTOR_PROMPT);
+  return await callAnthropic(userMessage, INVESTOR_PROMPT, documentContext);
 }
 
 export async function consultOnPoint(
   pointTitle: string,
   pointContent: string,
-  userContext: string
+  userContext: string,
+  documentContext?: string
 ): Promise<string> {
 
   const userMessage = `FEEDBACK POINT: ${pointTitle} — ${pointContent}
@@ -224,7 +251,7 @@ CONTEXT: ${userContext}
 
 Task: Explain this feedback point in more detail. What specifically should the founder do to address it? Give concrete, actionable advice grounded in ThinkShow's actual situation (schools, educators, South Africa). Do not suggest enterprise pivots unless explicitly asked.`;
 
-  return await callAnthropic(userMessage, INVESTOR_PROMPT);
+  return await callAnthropic(userMessage, INVESTOR_PROMPT, documentContext);
 }
 
 // ============================================================
@@ -233,7 +260,8 @@ Task: Explain this feedback point in more detail. What specifically should the f
 export async function coachMe(
   questionText: string,
   currentAnswer: string,
-  stageTitle: string
+  stageTitle: string,
+  documentContext?: string
 ): Promise<string> {
 
   const userMessage = `STAGE: ${stageTitle}
@@ -244,13 +272,14 @@ Help Dylan with this question. If he has a draft, tell him what's working, what'
 
 Be specific to ThinkShow. No generic startup advice.`;
 
-  return await callAnthropic(userMessage, COACH_PROMPT);
+  return await callAnthropic(userMessage, COACH_PROMPT, documentContext);
 }
 
 export async function coachDraftAnswer(
   questionText: string,
   currentAnswer: string,
-  stageTitle: string
+  stageTitle: string,
+  documentContext?: string
 ): Promise<string> {
 
   const userMessage = `STAGE: ${stageTitle}
@@ -263,5 +292,35 @@ If Dylan has an existing draft, improve it rather than starting from scratch —
 
 Return ONLY the draft answer text, nothing else.`;
 
-  return await callAnthropic(userMessage, COACH_PROMPT);
+  return await callAnthropic(userMessage, COACH_PROMPT, documentContext);
+}
+
+// ============================================================
+// DOCUMENT CONTEXT HELPER
+// ============================================================
+export function buildDocumentContext(documents: Array<{ name: string; content: string }>): string {
+  if (!documents || documents.length === 0) return '';
+
+  // Limit total context to ~8000 chars to avoid blowing up the prompt
+  const MAX_TOTAL_CHARS = 8000;
+  const MAX_PER_DOC = 3000;
+
+  let totalChars = 0;
+  const sections: string[] = [];
+
+  for (const doc of documents) {
+    const truncated = doc.content.length > MAX_PER_DOC
+      ? doc.content.substring(0, MAX_PER_DOC) + '\n[... document truncated ...]'
+      : doc.content;
+
+    if (totalChars + truncated.length > MAX_TOTAL_CHARS) {
+      sections.push(`\n[Additional documents omitted due to length — ${documents.length - sections.length} more documents available]`);
+      break;
+    }
+
+    sections.push(`--- ${doc.name} ---\n${truncated}`);
+    totalChars += truncated.length;
+  }
+
+  return sections.join('\n\n');
 }

@@ -182,10 +182,16 @@ const Sidebar: React.FC<SidebarProps> = ({ state, dispatch, onViewReport, isRepo
             />
           </div>
         )}
+        {!sidebarCollapsed && state.uploadedDocuments && state.uploadedDocuments.length > 0 && (
+          <div className="flex items-center gap-2 text-[10px] font-mono text-gray-500 mt-2">
+            <FileText size={12} className="text-[#D4A843]/50" />
+            {state.uploadedDocuments.length} context doc{state.uploadedDocuments.length !== 1 ? 's' : ''} loaded
+          </div>
+        )}
         {!sidebarCollapsed && (
-          <button 
+          <button
             onClick={handleClearProgress}
-            className="flex items-center gap-2 text-[10px] font-mono text-red-500/50 hover:text-red-500 transition-colors uppercase tracking-widest"
+            className="flex items-center gap-2 text-[10px] font-mono text-red-500/50 hover:text-red-500 transition-colors uppercase tracking-widest mt-2"
           >
             <Trash2 size={12} /> Clear All Data
           </button>
