@@ -102,8 +102,12 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Ensure we reset transient states like isEvaluating
-        return { ...parsed, isEvaluating: false };
+        // Ensure we reset transient states like isEvaluating and ensure uploadedDocuments exists
+        return {
+          ...parsed,
+          isEvaluating: false,
+          uploadedDocuments: parsed.uploadedDocuments || []
+        };
       } catch (e) {
         return initial;
       }

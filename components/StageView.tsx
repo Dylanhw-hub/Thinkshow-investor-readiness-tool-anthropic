@@ -257,7 +257,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
   };
 
   const getDocContext = () => buildDocumentContext(
-    state.uploadedDocuments.map(d => ({ name: d.name, content: d.content }))
+    (state.uploadedDocuments || []).map(d => ({ name: d.name, content: d.content }))
   );
 
   const handleSubmit = async () => {
@@ -526,8 +526,8 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] font-mono uppercase tracking-widest text-gray-500 flex items-center gap-2">
             <FileText size={12} /> Context Library
-            {state.uploadedDocuments.length > 0 && (
-              <span className="text-[#D4A843]">({state.uploadedDocuments.length} doc{state.uploadedDocuments.length !== 1 ? 's' : ''})</span>
+            {(state.uploadedDocuments?.length ?? 0) > 0 && (
+              <span className="text-[#D4A843]">({state.uploadedDocuments?.length ?? 0} doc{(state.uploadedDocuments?.length ?? 0) !== 1 ? 's' : ''})</span>
             )}
           </span>
           <label className="cursor-pointer text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-[#D4A843] transition-colors border border-gray-800 hover:border-[#D4A843]/30 px-3 py-1 rounded-lg flex items-center gap-2">
@@ -596,9 +596,9 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         </div>
 
         {/* Document list */}
-        {state.uploadedDocuments.length > 0 && (
+        {(state.uploadedDocuments?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-2">
-            {state.uploadedDocuments.map(doc => (
+            {(state.uploadedDocuments || []).map(doc => (
               <div
                 key={doc.id}
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#0F0F1A] border border-gray-800 rounded-lg group hover:border-gray-700 transition-colors"
@@ -619,7 +619,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
           </div>
         )}
 
-        {state.uploadedDocuments.length === 0 && (
+        {(state.uploadedDocuments?.length ?? 0) === 0 && (
           <p className="text-[10px] text-gray-600 font-mono">
             Upload pitch decks, business plans, brochures, or proposals. The AI will use these as context.
           </p>
