@@ -1,22 +1,26 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Stage, AppState, Action } from '../types';
-import { evaluateStage, refineDraft, consultOnPoint } from '../services/gemini';
-import { 
-  Loader2, 
-  AlertTriangle, 
-  CheckCircle, 
-  ArrowRight, 
-  BrainCircuit, 
-  Info, 
-  Target, 
-  Zap, 
-  BarChart3, 
+import { Stage, AppState, Action, AIMode } from '../types';
+import { evaluateStage, refineDraft, consultOnPoint, coachMe, coachDraftAnswer } from '../services/gemini';
+import {
+  Loader2,
+  AlertTriangle,
+  CheckCircle,
+  ArrowRight,
+  BrainCircuit,
+  Info,
+  Target,
+  Zap,
+  BarChart3,
   ArrowUpRight,
   ShieldAlert,
   Globe,
   Mic,
-  Square
+  Square,
+  Sparkles,
+  Shield,
+  MessageCircle,
+  PenTool
 } from 'lucide-react';
 
 interface StageViewProps {
@@ -43,6 +47,18 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     isLoading: boolean;
   } | null>(null);
   const [feedbackCache, setFeedbackCache] = useState<Record<string, string>>({});
+
+  // AI Mode State
+  const [aiMode, setAiMode] = useState<AIMode>('coach');
+
+  // Coach State
+  const [coachPanel, setCoachPanel] = useState<{
+    questionId: string;
+    content: string;
+    isLoading: boolean;
+    type: 'help' | 'draft';
+  } | null>(null);
+  const [coachCache, setCoachCache] = useState<Record<string, string>>({});
 
   const recognitionRef = useRef<any>(null);
   const answersRef = useRef(answers);
@@ -195,6 +211,49 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
     }
   };
 
+  const handleCoachHelp = async (questionId: string, questionText: string) => {
+    const cacheKey = `help-${questionId}-${(answers[questionId] || '').length}`;
+
+    if (coachCache[cacheKey]) {
+      setCoachPanel({ questionId, content: coachCache[cacheKey], isLoading: false, type: 'help' });
+      return;
+    }
+
+    setCoachPanel({ questionId, content: '', isLoading: true, type: 'help' });
+
+    try {
+      const result = await coachMe(questionText, answers[questionId] || '', stage.title);
+      setCoachCache(prev => ({ ...prev, [cacheKey]: result }));
+      setCoachPanel({ questionId, content: result, isLoading: false, type: 'help' });
+    } catch (e) {
+      setCoachPanel({ questionId, content: 'Coach unavailable. Try again.', isLoading: false, type: 'help' });
+    }
+  };
+
+  const handleCoachDraft = async (questionId: string, questionText: string) => {
+    const cacheKey = `draft-${questionId}-${(answers[questionId] || '').length}`;
+
+    if (coachCache[cacheKey]) {
+      setCoachPanel({ questionId, content: coachCache[cacheKey], isLoading: false, type: 'draft' });
+      return;
+    }
+
+    setCoachPanel({ questionId, content: '', isLoading: true, type: 'draft' });
+
+    try {
+      const result = await coachDraftAnswer(questionText, answers[questionId] || '', stage.title);
+      setCoachCache(prev => ({ ...prev, [cacheKey]: result }));
+      setCoachPanel({ questionId, content: result, isLoading: false, type: 'draft' });
+    } catch (e) {
+      setCoachPanel({ questionId, content: 'Draft generation failed. Try again.', isLoading: false, type: 'draft' });
+    }
+  };
+
+  const handleUseDraft = (questionId: string, draftText: string) => {
+    handleAnswerChange(questionId, draftText);
+    setCoachPanel(null);
+  };
+
   const handleSubmit = async () => {
     const allAnswersFilled = stage.questions.every(q => (answers[q.id]?.length || 0) >= 10);
     if (!allAnswersFilled) {
@@ -230,6 +289,69 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
 
   const cleanText = (text: string) => {
     return text.replace(/\*\*|###|#/g, '').trim();
+  };
+
+  const CoachExpander = ({
+    content,
+    isLoading,
+    type,
+    questionId,
+    onClose,
+    onUseDraft
+  }: {
+    content: string;
+    isLoading: boolean;
+    type: 'help' | 'draft';
+    questionId: string;
+    onClose: () => void;
+    onUseDraft?: (qId: string, text: string) => void;
+  }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+      navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    };
+
+    return (
+      <div className="mt-3 bg-[#0A1A0F] border-l-2 border-green-500/30 rounded-r-lg p-4 animate-in slide-in-from-top-2 duration-300">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-green-500/70 text-sm">
+            <Loader2 size={14} className="animate-spin" />
+            <span className="font-mono text-[10px] uppercase tracking-widest">
+              {type === 'draft' ? 'Drafting answer...' : 'Thinking...'}
+            </span>
+          </div>
+        ) : (
+          <>
+            <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
+            <div className="flex items-center gap-3 mt-3 pt-2 border-t border-gray-800/50">
+              <button
+                onClick={handleCopy}
+                className="text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-green-400 transition-colors"
+              >
+                {copied ? '✓ Copied' : 'Copy text'}
+              </button>
+              {type === 'draft' && onUseDraft && (
+                <button
+                  onClick={() => onUseDraft(questionId, content)}
+                  className="text-[10px] font-mono uppercase tracking-widest text-green-500 hover:text-green-400 transition-colors border border-green-500/30 px-2 py-1 rounded"
+                >
+                  Use This Draft
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-white transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   const FeedbackExpander = ({ content, isLoading, onClose }: { content: string; isLoading: boolean; onClose: () => void }) => {
@@ -369,6 +491,30 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
         </p>
       </div>
 
+      {/* AI Mode Toggle */}
+      <div className="mt-8 flex items-center gap-2 p-1 bg-[#0F0F1A] rounded-xl border border-gray-800 w-fit">
+        <button
+          onClick={() => setAiMode('coach')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono uppercase tracking-widest transition-all ${
+            aiMode === 'coach'
+              ? 'bg-green-500/10 text-green-400 border border-green-500/30'
+              : 'text-gray-500 hover:text-gray-300 border border-transparent'
+          }`}
+        >
+          <Sparkles size={14} /> Coach Me
+        </button>
+        <button
+          onClick={() => setAiMode('investor')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono uppercase tracking-widest transition-all ${
+            aiMode === 'investor'
+              ? 'bg-[#D4A843]/10 text-[#D4A843] border border-[#D4A843]/30'
+              : 'text-gray-500 hover:text-gray-300 border border-transparent'
+          }`}
+        >
+          <Shield size={14} /> Investor Mode
+        </button>
+      </div>
+
       <div className="space-y-16">
         {stage.questions.map((q) => {
           const charCount = (answers[q.id] || '').length;
@@ -432,6 +578,42 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
                   </div>
                 )}
               </div>
+
+              {/* Coach Buttons — only visible in coach mode */}
+              {aiMode === 'coach' && (
+                <div className="flex items-center gap-3 mt-3">
+                  <button
+                    onClick={() => handleCoachHelp(q.id, q.text)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-widest text-green-500/60 hover:text-green-400 border border-green-500/20 hover:border-green-500/40 transition-all"
+                  >
+                    <MessageCircle size={12} />
+                    {coachPanel?.questionId === q.id && coachPanel?.type === 'help' && coachPanel?.isLoading
+                      ? 'Thinking...'
+                      : 'Help Me With This'}
+                  </button>
+                  <button
+                    onClick={() => handleCoachDraft(q.id, q.text)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-widest text-green-500/60 hover:text-green-400 border border-green-500/20 hover:border-green-500/40 transition-all"
+                  >
+                    <PenTool size={12} />
+                    {coachPanel?.questionId === q.id && coachPanel?.type === 'draft' && coachPanel?.isLoading
+                      ? 'Drafting...'
+                      : 'Draft Answer For Me'}
+                  </button>
+                </div>
+              )}
+
+              {/* Coach Response Panel */}
+              {coachPanel?.questionId === q.id && (
+                <CoachExpander
+                  content={coachPanel.content}
+                  isLoading={coachPanel.isLoading}
+                  type={coachPanel.type}
+                  questionId={q.id}
+                  onClose={() => setCoachPanel(null)}
+                  onUseDraft={coachPanel.type === 'draft' ? handleUseDraft : undefined}
+                />
+              )}
             </div>
           );
         })}
@@ -439,6 +621,16 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
 
       {evaluation && (
         <div className="mt-16 border-t border-gray-800 pt-16 space-y-12 animate-in zoom-in-95 duration-700">
+          {/* Mode reminder */}
+          {aiMode === 'coach' && (
+            <div className="flex items-center gap-2 p-3 bg-green-500/5 border border-green-500/20 rounded-lg mb-6">
+              <Sparkles size={14} className="text-green-400" />
+              <span className="text-[10px] font-mono uppercase tracking-widest text-green-400/70">
+                Coach mode is active — use the coaching tools on each question above to improve your answers, then re-evaluate
+              </span>
+            </div>
+          )}
+
           <div className="flex flex-col md:flex-row items-center gap-8 bg-[#0F0F1A] rounded-2xl p-8 border border-gray-800 relative overflow-hidden">
              <div className="absolute top-0 right-0 p-4 opacity-5">
                <BrainCircuit size={120} />
@@ -583,7 +775,7 @@ const StageView: React.FC<StageViewProps> = ({ stage, state, dispatch }) => {
             </>
           ) : (
             <>
-              {evaluation ? 'Re-Evaluate Logic' : 'Submit Plan'}
+              {evaluation ? 'Re-Evaluate' : 'Submit for Evaluation'}
               <ArrowRight size={20} />
             </>
           )}

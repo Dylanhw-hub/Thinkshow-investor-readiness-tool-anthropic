@@ -53,3 +53,11 @@ export type Action =
   | { type: 'SKIP_STAGE'; stageId: number }
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'SET_EVALUATING'; status: boolean };
+
+export type AIMode = 'coach' | 'investor';
+
+export interface CoachResponse {
+  suggestion: string;
+  opportunities: string[];
+  draftAnswer: string;
+}
